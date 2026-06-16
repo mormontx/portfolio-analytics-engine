@@ -26,8 +26,9 @@ const PORTFOLIOS = {
   // 'dividend-yield': { id: 'dividend-yield', name: 'Steady Yield', subtitle: 'Dividend Income Strategy', ... },
 };
 
+const DATA_DIR = process.env.VERCEL ? '/tmp' : __dirname;
 function purchaseFile(portfolioId) {
-  return path.join(__dirname, `purchase_prices_${portfolioId}.json`);
+  return path.join(DATA_DIR, `purchase_prices_${portfolioId}.json`);
 }
 const cache = {};
 const CACHE_TTL = 5 * 60 * 1000;
@@ -470,4 +471,10 @@ app.post('/api/reset', (req, res) => {
   res.json({ message: `Portfolio '${portfolioId}' reset.` });
 });
 
-app.listen(PORT, () => console.log(`\n  🔬 Portfolio Analytics Engine running at http://localhost:${PORT}\n`));
+// Only listen when running locally (not on Vercel)
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => console.log(`\n  🔬 Portfolio Analytics Engine running at http://localhost:${PORT}\n`));
+}
+
+// Export for Vercel serverless
+module.exports = app;
