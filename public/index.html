@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Multi-portfolio analytics engine with Monte Carlo projections, technical indicators, and real-time market data.">
+  <title>Portfolio Analytics Engine</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔬</text></svg>">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+  <!-- Loading -->
+  <div class="loading-overlay" id="loader">
+    <div class="loader-text">INITIALIZING ANALYTICS ENGINE</div>
+    <div class="loader-bar"><div class="loader-bar__fill"></div></div>
+    <div class="loader-text" style="opacity: 0.5">Fetching 6-month historical data · Computing projections</div>
+  </div>
+
+  <div class="dashboard">
+    <!-- Top Bar -->
+    <header class="topbar">
+      <div class="topbar__left">
+        <div class="topbar__logo">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>
+          ANALYTICS ENGINE
+        </div>
+        <div class="topbar__divider"></div>
+        <div class="topbar__title" id="topbarTitle">Portfolio Analytics</div>
+      </div>
+      <div class="topbar__right">
+        <span class="live-badge" id="marketBadge">
+          <span class="live-dot"></span>
+          <span id="marketLabel">—</span>
+        </span>
+        <span class="topbar__time" id="lastUpdated">—</span>
+        <button class="btn btn--accent" id="refreshBtn" type="button">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+          REFRESH
+        </button>
+      </div>
+    </header>
+
+    <!-- Tab Bar -->
+    <nav class="tab-bar" id="tabBar">
+      <!-- Tabs populated by JS -->
+    </nav>
+
+    <!-- Error -->
+    <div class="error-banner" id="errorBanner"></div>
+
+    <!-- Portfolio Content (loaded per tab) -->
+    <div id="portfolioContent">
+      <!-- KPI Strip -->
+      <section class="kpi-strip" id="kpiStrip">
+        <div class="kpi kpi--primary">
+          <span class="kpi__label">Portfolio Value</span>
+          <span class="kpi__value" id="kpiValue">—</span>
+          <span class="kpi__sub" id="kpiValueSub">—</span>
+        </div>
+        <div class="kpi">
+          <span class="kpi__label">Total Return</span>
+          <span class="kpi__value" id="kpiReturn">—</span>
+          <span class="kpi__sub" id="kpiReturnSub">—</span>
+        </div>
+        <div class="kpi">
+          <span class="kpi__label">Day Change</span>
+          <span class="kpi__value" id="kpiDay">—</span>
+          <span class="kpi__sub" id="kpiDaySub">—</span>
+        </div>
+        <div class="kpi">
+          <span class="kpi__label">Ann. Volatility</span>
+          <span class="kpi__value" id="kpiVol">—</span>
+          <span class="kpi__sub" style="color: var(--text-2)">σ (252d)</span>
+        </div>
+        <div class="kpi">
+          <span class="kpi__label">Sharpe Ratio</span>
+          <span class="kpi__value" id="kpiSharpe">—</span>
+          <span class="kpi__sub" style="color: var(--text-2)">risk-adj return</span>
+        </div>
+        <div class="kpi">
+          <span class="kpi__label">Max Drawdown</span>
+          <span class="kpi__value" id="kpiMDD">—</span>
+          <span class="kpi__sub" style="color: var(--text-2)">peak-to-trough</span>
+        </div>
+      </section>
+
+      <!-- Portfolio Chart -->
+      <section class="panel">
+        <div class="panel__header">
+          <span class="panel__title">Portfolio Performance<span class="panel__subtitle">6-month historical + 8-week GBM projection with 80% confidence interval</span></span>
+        </div>
+        <div class="chart-container">
+          <canvas id="portfolioChart"></canvas>
+        </div>
+      </section>
+
+      <!-- Holdings Table -->
+      <section class="panel">
+        <div class="panel__header">
+          <span class="panel__title">Holdings Analysis</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Asset</th>
+                <th>Sector</th>
+                <th class="th-right">Price</th>
+                <th class="th-right">Day Δ</th>
+                <th class="th-right">P&L</th>
+                <th class="th-right">Value</th>
+                <th>30D Trend</th>
+                <th class="th-right">RSI(14)</th>
+                <th>Signal</th>
+                <th class="th-right">Alloc</th>
+              </tr>
+            </thead>
+            <tbody id="holdingsBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 8-Week Projections Table -->
+      <section class="panel">
+        <div class="panel__header">
+          <span class="panel__title">8-Week Price Projections<span class="panel__subtitle">Geometric Brownian Motion · Momentum-adjusted drift · Percentile bands</span></span>
+        </div>
+        <div class="table-wrap">
+          <table class="proj-table" id="projTable"></table>
+        </div>
+        <div class="methodology">
+          <strong>Methodology:</strong> Projections use a closed-form Geometric Brownian Motion (GBM) model:
+          S(t) = S₀ · exp[(μ − ½σ²)t + σ√t · Φ⁻¹(p)], where μ is the momentum-adjusted daily drift
+          (50% long-term / 50% 20-day recent), σ is historical daily volatility, and Φ⁻¹(p) is the inverse
+          normal CDF at the specified percentile. Bull = 90th, Base = 50th (median), Bear = 10th percentile.
+          These are statistical projections, not price targets.
+        </div>
+      </section>
+
+      <!-- Individual Stock Charts -->
+      <section class="charts-grid" id="chartsGrid"></section>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+      Hypothetical portfolio · Educational purposes only · Not investment advice · Data via Yahoo Finance
+    </footer>
+  </div>
+
+  <script>
+    // ═══════════════════════════════════════════════════════
+    //  State
+    // ═══════════════════════════════════════════════════════
+    let activePortfolioId = null;
+    let portfolioList = [];
+    const chartInstances = {};
+
+    // ═══════════════════════════════════════════════════════
+    //  Utilities
+    // ═══════════════════════════════════════════════════════
+    const $ = (s) => document.querySelector(s);
+    const fmt = (n) => n == null ? '—' : '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const fmtPct = (n) => n == null ? '—' : `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`;
+    const fmtChange = (n) => n == null ? '—' : `${n >= 0 ? '+' : ''}${fmt(n)}`;
+
+    function ts(iso) {
+      return new Date(iso).toLocaleString('en-US', {
+        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit'
+      });
+    }
+
+    // Chart.js defaults
+    Chart.defaults.color = '#556078';
+    Chart.defaults.borderColor = 'rgba(28, 37, 56, 0.5)';
+    Chart.defaults.font.family = "'IBM Plex Mono', monospace";
+    Chart.defaults.font.size = 10;
+    Chart.defaults.plugins.legend.labels.boxWidth = 10;
+    Chart.defaults.plugins.legend.labels.padding = 14;
+    Chart.defaults.plugins.tooltip.backgroundColor = '#1a2236';
+    Chart.defaults.plugins.tooltip.borderColor = '#2d3f60';
+    Chart.defaults.plugins.tooltip.borderWidth = 1;
+    Chart.defaults.plugins.tooltip.titleFont = { family: "'IBM Plex Mono', monospace", weight: '600', size: 11 };
+    Chart.defaults.plugins.tooltip.bodyFont = { family: "'IBM Plex Mono', monospace", size: 11 };
+    Chart.defaults.plugins.tooltip.padding = 10;
+    Chart.defaults.elements.point.radius = 0;
+    Chart.defaults.elements.point.hoverRadius = 4;
+
+    // ═══════════════════════════════════════════════════════
+    //  Tab Bar
+    // ═══════════════════════════════════════════════════════
+    function renderTabs(portfolios) {
+      const bar = $('#tabBar');
+      bar.innerHTML = '';
+
+      portfolios.forEach((p, idx) => {
+        if (idx > 0) {
+          const div = document.createElement('div');
+          div.className = 'tab-divider';
+          bar.appendChild(div);
+        }
+
+        const btn = document.createElement('button');
+        btn.className = `tab${p.id === activePortfolioId ? ' is-active' : ''}`;
+        btn.setAttribute('data-id', p.id);
+        btn.innerHTML = `
+          <span class="tab__dot"></span>
+          <span class="tab__name">${p.name}</span>
+          <span class="tab__sub">${p.subtitle}</span>
+        `;
+        btn.addEventListener('click', () => switchPortfolio(p.id));
+        bar.appendChild(btn);
+      });
+
+      // Add portfolio button (placeholder for future)
+      const divider = document.createElement('div');
+      divider.className = 'tab-divider';
+      bar.appendChild(divider);
+
+      const addBtn = document.createElement('button');
+      addBtn.className = 'tab tab--add';
+      addBtn.title = 'Add a new portfolio (coming soon)';
+      addBtn.innerHTML = `
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        <span>ADD PORTFOLIO</span>
+      `;
+      bar.appendChild(addBtn);
+    }
+
+    function setActiveTab(id) {
+      document.querySelectorAll('.tab').forEach(t => {
+        t.classList.toggle('is-active', t.getAttribute('data-id') === id);
+      });
+    }
+
+    async function switchPortfolio(id) {
+      if (id === activePortfolioId) return;
+      activePortfolioId = id;
+      setActiveTab(id);
+      // Destroy existing charts
+      Object.keys(chartInstances).forEach(k => { chartInstances[k].destroy(); delete chartInstances[k]; });
+      await loadAnalytics(id);
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  Render KPIs
+    // ═══════════════════════════════════════════════════════
+    function renderKPIs(p, holdings) {
+      // Update topbar title
+      $('#topbarTitle').textContent = `${p.name} — ${p.subtitle || ''}`;
+      document.title = `${p.name} | Analytics Engine`;
+
+      $('#kpiValue').textContent = fmt(p.totalCurrentValue);
+      const cls = p.totalGainLoss >= 0 ? 'gain' : 'loss';
+      $('#kpiValueSub').textContent = `${fmtChange(p.totalGainLoss)} all time`;
+      $('#kpiValueSub').className = `kpi__sub kpi__sub--${cls}`;
+
+      $('#kpiReturn').textContent = fmtPct(p.totalGainLossPct);
+      $('#kpiReturn').style.color = p.totalGainLoss >= 0 ? 'var(--gain)' : 'var(--loss)';
+      $('#kpiReturnSub').textContent = 'since inception';
+      $('#kpiReturnSub').className = 'kpi__sub';
+      $('#kpiReturnSub').style.color = 'var(--text-2)';
+
+      let dayDollar = 0;
+      holdings.forEach(h => { if (h.dayChange != null) dayDollar += h.shares * h.dayChange; });
+      const dayPct = (dayDollar / p.totalCurrentValue) * 100;
+      const dayCls = dayDollar >= 0 ? 'gain' : 'loss';
+      $('#kpiDay').textContent = fmtChange(parseFloat(dayDollar.toFixed(2)));
+      $('#kpiDay').style.color = dayDollar >= 0 ? 'var(--gain)' : 'var(--loss)';
+      $('#kpiDaySub').textContent = fmtPct(dayPct);
+      $('#kpiDaySub').className = `kpi__sub kpi__sub--${dayCls}`;
+
+      $('#kpiVol').textContent = p.annualizedVol != null ? `${p.annualizedVol}%` : '—';
+      $('#kpiSharpe').textContent = p.sharpeRatio != null ? p.sharpeRatio.toFixed(2) : '—';
+      $('#kpiMDD').textContent = p.maxDrawdown != null ? `${p.maxDrawdown}%` : '—';
+      if (p.maxDrawdown != null) $('#kpiMDD').style.color = 'var(--loss)';
+
+      const isOpen = p.marketState === 'REGULAR';
+      $('#marketBadge').className = `live-badge live-badge--${isOpen ? 'open' : 'closed'}`;
+      $('#marketLabel').textContent = isOpen ? 'MARKET OPEN' : 'MARKET CLOSED';
+      $('#lastUpdated').textContent = ts(p.lastUpdated);
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  Render Portfolio Chart
+    // ═══════════════════════════════════════════════════════
+    function renderPortfolioChart(hist, projections) {
+      const ctx = $('#portfolioChart');
+      if (chartInstances.portfolio) chartInstances.portfolio.destroy();
+
+      const allLabels = [...hist.dates];
+      const histValues = [...hist.values];
+      const projBase = new Array(hist.dates.length).fill(null);
+      const projBull = new Array(hist.dates.length).fill(null);
+      const projBear = new Array(hist.dates.length).fill(null);
+
+      const lastVal = hist.values[hist.values.length - 1];
+      projBase[projBase.length - 1] = lastVal;
+      projBull[projBull.length - 1] = lastVal;
+      projBear[projBear.length - 1] = lastVal;
+
+      projections.forEach(p => {
+        allLabels.push(p.date);
+        histValues.push(null);
+        projBase.push(p.p50);
+        projBull.push(p.p90);
+        projBear.push(p.p10);
+      });
+
+      chartInstances.portfolio = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: allLabels,
+          datasets: [
+            { label: 'Historical Value', data: histValues, borderColor: '#00d4aa', borderWidth: 2, fill: false, tension: 0.1, order: 1 },
+            { label: 'Projected (Median)', data: projBase, borderColor: '#3d8bfd', borderWidth: 2, borderDash: [6, 4], fill: false, tension: 0.3, order: 2 },
+            { label: '90th Percentile (Bull)', data: projBull, borderColor: 'rgba(0, 230, 118, 0.3)', borderWidth: 1, fill: '+1', backgroundColor: 'rgba(0, 230, 118, 0.05)', tension: 0.3, order: 3 },
+            { label: '10th Percentile (Bear)', data: projBear, borderColor: 'rgba(255, 82, 82, 0.3)', borderWidth: 1, fill: false, tension: 0.3, order: 4 },
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          interaction: { intersect: false, mode: 'index' },
+          scales: {
+            x: { ticks: { maxTicksLimit: 12, callback(val) { return new Date(this.getLabelForValue(val)).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); } }, grid: { display: false } },
+            y: { position: 'right', ticks: { callback: v => '$' + v.toLocaleString() }, grid: { color: 'rgba(28,37,56,0.3)' } }
+          },
+          plugins: { tooltip: { callbacks: { label: c => `${c.dataset.label}: $${c.parsed.y?.toLocaleString('en-US', { minimumFractionDigits: 2 }) || '—'}` } } }
+        }
+      });
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  Sparkline
+    // ═══════════════════════════════════════════════════════
+    function drawSparkline(canvas, data, color) {
+      const ctx = canvas.getContext('2d');
+      const w = 100, h = 32;
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = w * dpr; canvas.height = h * dpr;
+      canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+      ctx.scale(dpr, dpr);
+      if (!data || data.length < 2) return;
+      const min = Math.min(...data), max = Math.max(...data), range = max - min || 1, pad = 2;
+      ctx.beginPath();
+      data.forEach((v, i) => {
+        const x = (i / (data.length - 1)) * (w - pad * 2) + pad;
+        const y = h - pad - ((v - min) / range) * (h - pad * 2);
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      });
+      ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.lineTo((data.length - 1) / (data.length - 1) * (w - pad * 2) + pad, h);
+      ctx.lineTo(pad, h); ctx.closePath();
+      const grad = ctx.createLinearGradient(0, 0, 0, h);
+      grad.addColorStop(0, color.replace(')', ', 0.15)').replace('rgb', 'rgba'));
+      grad.addColorStop(1, 'transparent');
+      ctx.fillStyle = grad; ctx.fill();
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  Render Holdings Table
+    // ═══════════════════════════════════════════════════════
+    function renderHoldings(holdings) {
+      const tbody = $('#holdingsBody');
+      tbody.innerHTML = '';
+
+      holdings.forEach(h => {
+        if (h.error) return;
+        const isGain = h.gainLoss >= 0;
+        const isDayGain = h.dayChange >= 0;
+        const t = h.technicals || {};
+        const rsiVal = t.rsi ?? 50;
+        const rsiColor = rsiVal < 35 ? 'low' : rsiVal > 65 ? 'high' : 'mid';
+        const sigClass = (t.signal || 'hold').toLowerCase().replace(/\s+/g, '-');
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>
+            <div class="cell-ticker">
+              <div class="ticker-badge ticker-badge--${h.ticker}">${h.ticker}</div>
+              <div>
+                <div class="ticker-info__symbol">${h.ticker}</div>
+                <div class="ticker-info__name">${h.name}</div>
+              </div>
+            </div>
+          </td>
+          <td><span class="sector-tag">${h.sector}</span></td>
+          <td class="td-right mono">${fmt(h.currentPrice)}</td>
+          <td class="td-right mono ${isDayGain ? 'c-gain' : 'c-loss'}">${isDayGain ? '▲' : '▼'} ${fmtPct(h.dayChangePct)}</td>
+          <td class="td-right mono ${isGain ? 'c-gain' : 'c-loss'}">${fmtChange(h.gainLoss)}<br><small style="opacity:0.6">${fmtPct(h.gainLossPct)}</small></td>
+          <td class="td-right mono">${fmt(h.currentValue)}</td>
+          <td class="sparkline-cell"><canvas class="sparkline" data-ticker="${h.ticker}"></canvas></td>
+          <td class="td-right">
+            <div class="rsi-cell" style="justify-content: flex-end;">
+              <span class="mono" style="font-size: 0.75rem; min-width: 28px; text-align: right;">${t.rsi ?? '—'}</span>
+              <div class="rsi-bar"><div class="rsi-bar__fill rsi-bar__fill--${rsiColor}" style="width: ${rsiVal}%"></div></div>
+            </div>
+          </td>
+          <td><span class="signal-badge signal--${sigClass}">${t.signal || '—'}</span></td>
+          <td class="td-right">
+            <div class="alloc-cell">
+              <div class="alloc-bar"><div class="alloc-bar__fill" style="width: ${h.pct * 4}%"></div></div>
+              <span class="mono-dim" style="font-size: 0.7rem">${h.pct}%</span>
+            </div>
+          </td>
+        `;
+        tbody.appendChild(tr);
+
+        requestAnimationFrame(() => {
+          const canvas = tr.querySelector('.sparkline');
+          if (canvas && h.sparkline) {
+            const sparkColor = h.sparkline[h.sparkline.length - 1] >= h.sparkline[0] ? 'rgb(0, 230, 118)' : 'rgb(255, 82, 82)';
+            drawSparkline(canvas, h.sparkline, sparkColor);
+          }
+        });
+      });
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  Render Projections Table
+    // ═══════════════════════════════════════════════════════
+    function renderProjections(holdings) {
+      const table = $('#projTable');
+      const weeks = [1, 2, 3, 4, 6, 8];
+
+      let headerHTML = '<thead><tr><th style="min-width:120px">Stock</th><th>Scenario</th>';
+      weeks.forEach(w => {
+        const h = holdings.find(h => h.projections?.length >= w);
+        const dateStr = h ? new Date(h.projections[w-1].date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : `W${w}`;
+        headerHTML += `<th class="th-right">Week ${w}<br><small style="font-weight:400;opacity:0.5">${dateStr}</small></th>`;
+      });
+      headerHTML += '</tr></thead>';
+
+      let bodyHTML = '<tbody>';
+      holdings.forEach(h => {
+        if (!h.projections || h.projections.length === 0) return;
+        const scenarios = [
+          { key: 'p90', label: 'Bull (90th)', cls: 'bull' },
+          { key: 'p50', label: 'Base (50th)', cls: 'base' },
+          { key: 'p10', label: 'Bear (10th)', cls: 'bear' },
+        ];
+        scenarios.forEach((sc, si) => {
+          bodyHTML += '<tr>';
+          if (si === 0) bodyHTML += `<td class="proj-row-header" rowspan="3">${h.ticker}</td>`;
+          bodyHTML += `<td class="proj-label proj-label--${sc.cls}">${sc.label}</td>`;
+          weeks.forEach(w => {
+            const proj = h.projections[w - 1];
+            if (proj) {
+              const val = proj[sc.key];
+              const changePct = ((val - h.currentPrice) / h.currentPrice * 100).toFixed(1);
+              bodyHTML += `<td class="td-right proj-val proj-val--${sc.cls}">$${val.toFixed(2)}<span class="proj-change">${changePct >= 0 ? '+' : ''}${changePct}%</span></td>`;
+            } else {
+              bodyHTML += '<td class="td-right mono-dim">—</td>';
+            }
+          });
+          bodyHTML += '</tr>';
+        });
+      });
+      bodyHTML += '</tbody>';
+      table.innerHTML = headerHTML + bodyHTML;
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  Render Individual Stock Charts
+    // ═══════════════════════════════════════════════════════
+    function renderStockCharts(holdings, stockHistorical) {
+      const grid = $('#chartsGrid');
+      grid.innerHTML = '';
+
+      holdings.forEach(h => {
+        if (!h.projections || h.projections.length === 0 || !stockHistorical[h.ticker]) return;
+        const hist = stockHistorical[h.ticker];
+        const isDayGain = h.dayChange >= 0;
+        const t = h.technicals || {};
+        const sigClass = (t.signal || 'hold').toLowerCase().replace(/\s+/g, '-');
+
+        const panel = document.createElement('div');
+        panel.className = 'panel stock-chart-panel';
+        panel.innerHTML = `
+          <div class="stock-chart-header">
+            <span class="stock-chart-header__ticker">${h.ticker}</span>
+            <span class="stock-chart-header__price mono">${fmt(h.currentPrice)}</span>
+            <span class="stock-chart-header__change ${isDayGain ? 'c-gain' : 'c-loss'}">${isDayGain ? '▲' : '▼'} ${fmtPct(h.dayChangePct)}</span>
+            <span class="stock-chart-header__signal"><span class="signal-badge signal--${sigClass}">${t.signal || '—'}</span></span>
+          </div>
+          <div class="chart-container"><canvas id="chart_${h.ticker}"></canvas></div>
+        `;
+        grid.appendChild(panel);
+
+        requestAnimationFrame(() => {
+          const ctx = document.getElementById(`chart_${h.ticker}`);
+          if (chartInstances[h.ticker]) chartInstances[h.ticker].destroy();
+
+          const labels = [...hist.dates];
+          const histPrices = [...hist.prices];
+          const projMedian = new Array(hist.dates.length).fill(null);
+          const projBull = new Array(hist.dates.length).fill(null);
+          const projBear = new Array(hist.dates.length).fill(null);
+          const sma20 = new Array(hist.dates.length).fill(null);
+          for (let i = 19; i < hist.prices.length; i++) {
+            let sum = 0; for (let j = i - 19; j <= i; j++) sum += hist.prices[j];
+            sma20[i] = sum / 20;
+          }
+
+          const lastP = hist.prices[hist.prices.length - 1];
+          projMedian[projMedian.length - 1] = lastP;
+          projBull[projBull.length - 1] = lastP;
+          projBear[projBear.length - 1] = lastP;
+
+          h.projections.forEach(p => {
+            labels.push(p.date);
+            histPrices.push(null);
+            sma20.push(null);
+            projMedian.push(p.p50);
+            projBull.push(p.p90);
+            projBear.push(p.p10);
+          });
+
+          chartInstances[h.ticker] = new Chart(ctx, {
+            type: 'line',
+            data: {
+              labels,
+              datasets: [
+                { label: 'Price', data: histPrices, borderColor: '#00d4aa', borderWidth: 1.5, fill: false, tension: 0.1, order: 1 },
+                { label: 'SMA(20)', data: sma20, borderColor: 'rgba(167,139,250,0.4)', borderWidth: 1, borderDash: [3,3], fill: false, tension: 0.1, order: 2 },
+                { label: 'Projected', data: projMedian, borderColor: '#3d8bfd', borderWidth: 1.5, borderDash: [5,3], fill: false, tension: 0.3, order: 3 },
+                { label: '90th %', data: projBull, borderColor: 'rgba(0,230,118,0.2)', borderWidth: 1, fill: '+1', backgroundColor: 'rgba(0,230,118,0.04)', tension: 0.3, order: 4 },
+                { label: '10th %', data: projBear, borderColor: 'rgba(255,82,82,0.2)', borderWidth: 1, fill: false, tension: 0.3, order: 5 },
+              ]
+            },
+            options: {
+              responsive: true, maintainAspectRatio: false,
+              interaction: { intersect: false, mode: 'index' },
+              plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label}: $${c.parsed.y?.toFixed(2) || '—'}` } } },
+              scales: {
+                x: { ticks: { maxTicksLimit: 8, callback(val) { return new Date(this.getLabelForValue(val)).toLocaleDateString('en-US', {month:'short',day:'numeric'}); } }, grid: { display: false } },
+                y: { position: 'right', ticks: { callback: v => '$' + v.toFixed(0) }, grid: { color: 'rgba(28,37,56,0.3)' } }
+              }
+            }
+          });
+        });
+      });
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  Load Data
+    // ═══════════════════════════════════════════════════════
+    async function loadAnalytics(portfolioId) {
+      const id = portfolioId || activePortfolioId;
+      const btn = $('#refreshBtn');
+      btn.classList.add('is-spinning');
+
+      try {
+        const res = await fetch(`/api/analytics?id=${encodeURIComponent(id)}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+
+        renderKPIs(data.portfolio, data.holdings);
+        renderHoldings(data.holdings);
+        renderPortfolioChart(data.historical, data.portfolioProjections);
+        renderProjections(data.holdings);
+        renderStockCharts(data.holdings, data.stockHistorical);
+
+        $('#errorBanner').classList.remove('is-visible');
+      } catch (err) {
+        console.error(err);
+        $('#errorBanner').textContent = `Analytics error: ${err.message}`;
+        $('#errorBanner').classList.add('is-visible');
+      } finally {
+        btn.classList.remove('is-spinning');
+        $('#loader').classList.add('is-hidden');
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  Init
+    // ═══════════════════════════════════════════════════════
+    document.addEventListener('DOMContentLoaded', async () => {
+      try {
+        // Fetch portfolio list for tabs
+        const res = await fetch('/api/portfolios');
+        portfolioList = await res.json();
+
+        if (portfolioList.length > 0) {
+          activePortfolioId = portfolioList[0].id;
+          renderTabs(portfolioList);
+          await loadAnalytics(activePortfolioId);
+        }
+      } catch (err) {
+        console.error('Init error:', err);
+        $('#errorBanner').textContent = `Failed to initialize: ${err.message}`;
+        $('#errorBanner').classList.add('is-visible');
+        $('#loader').classList.add('is-hidden');
+      }
+
+      $('#refreshBtn').addEventListener('click', () => loadAnalytics());
+      setInterval(() => loadAnalytics(), 90_000);
+    });
+  </script>
+</body>
+</html>

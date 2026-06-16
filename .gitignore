@@ -1,0 +1,4 @@
+node_modules/
+purchase_prices*.json
+.DS_Store
+*.log
