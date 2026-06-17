@@ -4,6 +4,8 @@ A real-time, multi-portfolio stock analytics dashboard with Monte Carlo projecti
 
 ![Node.js](https://img.shields.io/badge/Node.js-18+-green) ![Express](https://img.shields.io/badge/Express-4.x-blue) ![Chart.js](https://img.shields.io/badge/Chart.js-4.x-orange)
 
+### 🌐 **[Live Site → portfolio-analytics-engine-production.up.railway.app](https://portfolio-analytics-engine-production.up.railway.app)**
+
 ## Features
 
 - **Live Market Data** — Real-time stock prices via Yahoo Finance, auto-refreshing every 90 seconds

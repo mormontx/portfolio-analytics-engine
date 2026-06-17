@@ -1,6 +1,8 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const YahooFinance = require('yahoo-finance2').default;
+const yahooFinance = new YahooFinance();
 
 const app = express();
 const PORT = 3000;
@@ -22,8 +24,19 @@ const PORTFOLIOS = {
       { ticker: 'UFCS', name: 'United Fire Group',       sector: 'Financials / Property & Casualty',  pct: 15, allocation: 1500 },
     ],
   },
-  // Add more portfolios here:
-  // 'dividend-yield': { id: 'dividend-yield', name: 'Steady Yield', subtitle: 'Dividend Income Strategy', ... },
+  'deep-current': {
+    id: 'deep-current',
+    name: 'Deep Current',
+    subtitle: 'Infrastructure & Logistics · Contrarian Value',
+    totalInvestment: 10000,
+    holdings: [
+      { ticker: 'ECO',  name: 'Okeanis Eco Tankers',    sector: 'Maritime Shipping / Energy Logistics',     pct: 25, allocation: 2500 },
+      { ticker: 'FTAI', name: 'FTAI Infrastructure',     sector: 'Infrastructure / Freight Rail & Ports',    pct: 22, allocation: 2200 },
+      { ticker: 'TREE', name: 'LendingTree, Inc.',       sector: 'Financial Services / Fintech Marketplace', pct: 18, allocation: 1800 },
+      { ticker: 'NMAN.ST', name: 'Nederman Holding AB',  sector: 'Industrials / Environmental Filtration',   pct: 17, allocation: 1700 },
+      { ticker: 'JSDA', name: 'Jones Soda Co.',          sector: 'Consumer Defensive / Craft Beverages',     pct: 18, allocation: 1800 },
+    ],
+  },
 };
 
 const DATA_DIR = process.env.VERCEL ? '/tmp' : __dirname;
@@ -209,37 +222,40 @@ async function fetchHistorical(ticker) {
   const cached = getCached(`hist_${ticker}`);
   if (cached) return cached;
 
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?range=6mo&interval=1d`;
-  const res = await fetch(url, {
-    headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' }
+  const period1 = new Date();
+  period1.setMonth(period1.getMonth() - 6);
+
+  const result = await yahooFinance.chart(ticker, {
+    period1,
+    period2: new Date(),
+    interval: '1d',
   });
-  const data = await res.json();
-  const result = data.chart?.result?.[0];
-  if (!result) throw new Error(`No data for ${ticker}`);
 
-  const timestamps = result.timestamp || [];
-  const quotes = result.indicators?.quote?.[0] || {};
-  const meta = result.meta;
-  const closes = quotes.close || [];
+  if (!result || !result.quotes || result.quotes.length === 0) {
+    throw new Error(`No data for ${ticker}`);
+  }
 
-  // Build clean arrays (remove nulls)
   const dates = [];
   const prices = [];
-  timestamps.forEach((ts, i) => {
-    if (closes[i] != null) {
-      dates.push(new Date(ts * 1000).toISOString().split('T')[0]);
-      prices.push(parseFloat(closes[i].toFixed(2)));
+  result.quotes.forEach(q => {
+    if (q.close != null && q.date) {
+      dates.push(new Date(q.date).toISOString().split('T')[0]);
+      prices.push(parseFloat(q.close.toFixed(2)));
     }
   });
+
+  const meta = result.meta || {};
+  const currentPrice = meta.regularMarketPrice || prices[prices.length - 1];
+  const previousClose = meta.chartPreviousClose || meta.previousClose || prices[prices.length - 2] || currentPrice;
 
   const output = {
     ticker,
     dates,
     prices,
-    currentPrice: meta.regularMarketPrice,
-    previousClose: meta.chartPreviousClose || meta.previousClose,
-    dayChange: parseFloat((meta.regularMarketPrice - (meta.chartPreviousClose || meta.previousClose)).toFixed(2)),
-    dayChangePct: parseFloat((((meta.regularMarketPrice - (meta.chartPreviousClose || meta.previousClose)) / (meta.chartPreviousClose || meta.previousClose)) * 100).toFixed(2)),
+    currentPrice,
+    previousClose,
+    dayChange: parseFloat((currentPrice - previousClose).toFixed(2)),
+    dayChangePct: parseFloat((((currentPrice - previousClose) / previousClose) * 100).toFixed(2)),
   };
 
   setCache(`hist_${ticker}`, output);
