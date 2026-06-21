@@ -33,7 +33,7 @@ const PORTFOLIOS = {
       { ticker: 'ECO',  name: 'Okeanis Eco Tankers',    sector: 'Maritime Shipping / Energy Logistics',     pct: 25, allocation: 2500 },
       { ticker: 'FTAI', name: 'FTAI Infrastructure',     sector: 'Infrastructure / Freight Rail & Ports',    pct: 22, allocation: 2200 },
       { ticker: 'TREE', name: 'LendingTree, Inc.',       sector: 'Financial Services / Fintech Marketplace', pct: 18, allocation: 1800 },
-      { ticker: 'NMAN.ST', name: 'Nederman Holding AB',  sector: 'Industrials / Environmental Filtration',   pct: 17, allocation: 1700 },
+      { ticker: 'CECO', name: 'CECO Environmental',     sector: 'Industrials / Environmental Filtration',   pct: 17, allocation: 1700 },
       { ticker: 'JSDA', name: 'Jones Soda Co.',          sector: 'Consumer Defensive / Craft Beverages',     pct: 18, allocation: 1800 },
     ],
   },
